@@ -1,14 +1,11 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 
-// Configuração da conexão com o Adafruit IO
 #define IO_USERNAME  "Maeiro"
-#define IO_KEY       "aio_LAbd67UOdbkWDtzbLgdtDVSR96KO"
+#define IO_KEY       "aio_EBsC916rej5hqTcysMQsKfxJ4NWN"
 const char* mqttServer = "io.adafruit.com";
 const int mqttPort = 1883;
 const char* co2Feed = IO_USERNAME "/feeds/co2-sensor";
-
-// Configuração da rede WiFi
 const char* ssid = "Kirby";
 const char* password = "kirby1401";
 
@@ -26,7 +23,7 @@ const char* password = "kirby1401";
 // Configuração dos pinos
 int buzzerPin = D1;      // Pino do buzzer
 int gasSensorPin = A0;   // Pino analógico do sensor de gás MQ-135
-float threshold = 50.0;  // Limite para acionar o buzzer (50 ppm)
+float threshold = 200.0;  // Limite para acionar o buzzer
 
 // Configuração do cliente WiFi e MQTT
 WiFiClient espClient;
@@ -46,12 +43,36 @@ int measurementCount = 0; // Contador de medições
 // Função para obter a resistência do sensor
 float getResistance() {
   int val = analogRead(gasSensorPin);
+  if (val == 0) {
+    Serial.println("Erro na leitura do sensor: valor inválido.");
+    return -1; // Valor indicativo de erro
+  }
   return ((1023.0 / (float)val) * 3.3 - 1.0) * RLOAD;
 }
 
 // Função para calcular o valor de CO2 em ppm
 float getPPM() {
-  return PARA * pow((getResistance() / RZERO), -PARB);
+  float resistance = getResistance();
+  if (resistance < 0) {
+    return 0; // Retorna 0 se houve erro na leitura
+  }
+  float ppm = PARA * pow((resistance / RZERO), -PARB);
+  return ppm;
+}
+
+// Função para reconectar ao MQTT caso desconecte
+void reconnectMQTT() {
+  while (!client.connected()) {
+    Serial.println("MQTT desconectado, tentando reconectar...");
+    if (client.connect("NodeMCUClient", IO_USERNAME, IO_KEY)) {
+      Serial.println("Reconectado ao MQTT");
+    } else {
+      Serial.print("Falhou, rc=");
+      Serial.print(client.state());
+      Serial.println(". Tentando novamente em 5 segundos...");
+      delay(5000);  // Evitar muitas tentativas consecutivas
+    }
+  }
 }
 
 void setup() {
@@ -59,32 +80,37 @@ void setup() {
   pinMode(buzzerPin, OUTPUT); // Define o pino do buzzer como saída
 
   // Conecta-se ao WiFi
+  Serial.print("Conectando ao WiFi: ");
+  Serial.println(ssid);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("Connected to WiFi");
+  Serial.println("\nConectado ao WiFi");
 
   // Configura o servidor MQTT
   client.setServer(mqttServer, mqttPort);
-  while (!client.connected()) {
-    Serial.println("Connecting to Adafruit IO...");
-    if (client.connect("NodeMCUClient", IO_USERNAME, IO_KEY)) {
-      Serial.println("Connected to Adafruit IO");
-    } else {
-      Serial.print("Failed, rc=");
-      Serial.print(client.state());
-      delay(2000);
-    }
-  }
+  reconnectMQTT(); // Conectar ao MQTT
 }
 
 void loop() {
+  // Verifica a conexão ao servidor MQTT e reconecta se necessário
   if (!client.connected()) {
-    client.connect("NodeMCUClient", IO_USERNAME, IO_KEY);
+    reconnectMQTT();
   }
   client.loop();
+
+  // Verifica o estado da conexão WiFi e reconecta se necessário
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi desconectado, tentando reconectar...");
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(500);
+      Serial.print(".");
+    }
+    Serial.println("\nReconectado ao WiFi");
+  }
 
   // Registra o tempo de leitura do sensor
   sensorReadTime = micros();  // Usando micros() para precisão em microssegundos
@@ -94,17 +120,12 @@ void loop() {
   ppmSum += ppm;
   sampleCount++;
 
-  // Tempo de resposta do atuador (ativação do buzzer)
+  // Verifica se o nível de CO2 ultrapassa o limite e aciona o buzzer
   if (ppm >= threshold) {
     if (digitalRead(buzzerPin) == LOW) {  // Se o buzzer estava desligado
       digitalWrite(buzzerPin, HIGH);      // Liga o buzzer (nível elevado de CO2)
       buzzerActivationTime = micros() - sensorReadTime;
-      
-      // Armazena o tempo de resposta do atuador e exibe cada medição
       actuatorTimes[measurementCount] = buzzerActivationTime;
-      Serial.print("Atuador - Tempo de resposta do buzzer: ");
-      Serial.print(buzzerActivationTime);
-      Serial.println(" µs");
     }
   } else {
     if (digitalRead(buzzerPin) == HIGH) { // Se o buzzer estava ligado
@@ -112,18 +133,15 @@ void loop() {
     }
   }
 
-  // Verifica se 2,5 segundos se passaram para enviar a média
-  if (micros() - lastSendTime >= 2500000) { // Converte para microssegundos
+  // Verifica se 2,5 segundos se passaram para enviar a média de CO2
+  if (micros() - lastSendTime >= 2500000) {
     float avgPPM = ppmSum / sampleCount; // Calcula a média
     ppmSum = 0.0;                        // Reseta a soma
     sampleCount = 0;                     // Reseta a contagem
 
-    // Calcula o tempo de resposta do sensor e exibe cada medição
+    // Calcula o tempo de resposta do sensor e armazena a medição
     sensorResponseTime = micros() - sensorReadTime;
     sensorTimes[measurementCount] = sensorResponseTime;
-    Serial.print("Sensor - Tempo de resposta de envio ao MQTT: ");
-    Serial.print(sensorResponseTime);
-    Serial.println(" µs");
 
     // Envia a média de CO2 para o Adafruit IO
     char avgPPMStr[8];
@@ -147,6 +165,7 @@ void loop() {
       unsigned long averageSensorTime = totalSensorTime / 4;
       unsigned long averageActuatorTime = totalActuatorTime / 4;
 
+      // Exibe as médias de tempo de resposta do sensor e do atuador
       Serial.println("\n===== Médias de Tempo de Resposta =====");
       Serial.print("Tempo médio de resposta do sensor: ");
       Serial.print(averageSensorTime);
