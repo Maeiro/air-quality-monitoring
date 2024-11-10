@@ -1,8 +1,8 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 
-#define IO_USERNAME  "Maeiro"
-#define IO_KEY       "aio_EBsC916rej5hqTcysMQsKfxJ4NWN"
+#define IO_USERNAME  "USERNAME"
+#define IO_KEY       "SECRETKEY"
 const char* mqttServer = "io.adafruit.com";
 const int mqttPort = 1883;
 const char* co2Feed = IO_USERNAME "/feeds/co2-sensor";
