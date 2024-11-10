@@ -75,11 +75,10 @@ Este sistema monitora a qualidade do ar em áreas industriais usando um microcon
 ## Resultados e Desempenho
 
 - O sistema detecta com sucesso mudanças na qualidade do ar e envia dados para o Adafruit IO para visualização.
-- Os tempos médios de resposta para leitura do sensor e ativação do buzzer estão disponíveis na pasta `results` deste repositório. Isso inclui um log detalhado dos tempos de resposta, calculado ao longo de quatro ciclos de detecção e alerta.
 
 ## Demonstração em Vídeo
 
-- Uma demonstração em vídeo do sistema em ação está disponível no YouTube: [Link para a Demonstração em Vídeo](https://youtube.com/link_do_video). Neste vídeo, você pode ver como o sistema responde a mudanças na qualidade do ar e envia dados para o Adafruit IO.
+- Uma demonstração em vídeo do sistema em ação está disponível no YouTube: [Link para a Demonstração em Vídeo](https://www.youtube.com/watch?v=MxF7MBbYLZM). Neste vídeo, você pode ver como o sistema responde a mudanças na qualidade do ar e envia dados para o Adafruit IO.
 
 ## Melhorias e Trabalhos Futuros
 
